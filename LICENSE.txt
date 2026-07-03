@@ -1,0 +1,11 @@
+MIT License (for external components)
+========================================
+Portions of this project use software from the Solana Foundation, which is licensed under the MIT License.
+
+Copyright (c) 2026 Cuadro Labs. All rights reserved.
+========================================
+This software and its associated documentation are the proprietary property of Cuadro Labs.
+Unauthorized copying, modification, or distribution of this software, or any portion 
+thereof, is strictly prohibited without the express written permission of Cuadro Labs.
+
+All rights reserved.
