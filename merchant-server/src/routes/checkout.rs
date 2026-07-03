@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
 };
 use serde_json::json;
@@ -71,9 +71,20 @@ pub async fn update_checkout(
 }
 
 /// POST /ucp/v1/checkout-sessions/:id/complete
+///
+/// Two-phase flow depending on the checkout's payment_handler_id:
+///
+/// Phase A — no X-Payment header:
+///   → handler.payment_requirements() → 402 with payment instructions
+///
+/// Phase B — X-Payment header present:
+///   → handler.verify_and_settle() → 200 if settled, 402/400 if not
+///
+/// Mock handler bypasses both phases and completes immediately.
 pub async fn complete_checkout(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     let mut checkout = match state.checkout_store.get(&id).await {
         Ok(c) => c,
@@ -81,17 +92,102 @@ pub async fn complete_checkout(
         Err(_) => return internal_error().into_response(),
     };
 
-    let complete_result = checkout.complete();
+    // Resolve the payment handler for this checkout.
+    let handler_id = match &checkout.payment_handler_id {
+        Some(id) => id.clone(),
+        None => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "error": "no payment handler selected",
+                    "hint": "update the checkout with a payment_handler_id first"
+                })),
+            )
+                .into_response()
+        }
+    };
 
-    // Persist regardless of outcome: on failure, `complete()` doesn't
-    // mutate status, but we still want to surface the current state.
-    if state.checkout_store.save(&checkout).await.is_err() {
-        return internal_error().into_response();
+    // Mock handler — bypasses payment flow entirely (for testing only).
+    // Not advertised in /.well-known/ucp for real agents.
+    if handler_id == "mock_1" {
+        let complete_result = checkout.complete();
+        if state.checkout_store.save(&checkout).await.is_err() {
+            return internal_error().into_response();
+        }
+        return match complete_result {
+            Ok(_) => (StatusCode::OK, Json(checkout)).into_response(),
+            Err(_) => (StatusCode::CONFLICT, Json(checkout)).into_response(),
+        };
     }
 
-    match complete_result {
-        Ok(_) => (StatusCode::OK, Json(checkout)).into_response(),
-        Err(_msg) => (StatusCode::CONFLICT, Json(checkout)).into_response(),
+    // Look up the real payment handler.
+    let handler = match state.payment_handlers.get(&handler_id) {
+        Some(h) => h.clone(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": format!("unsupported payment handler: {handler_id}")
+                })),
+            )
+                .into_response()
+        }
+    };
+
+    // Extract X-Payment header if present.
+    let x_payment = headers
+        .get("X-Payment")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    match x_payment {
+        // Phase A: no payment yet — return requirements so agent can pay.
+        None => {
+            match handler.payment_requirements(&checkout).await {
+                Ok(requirements) => (
+                    StatusCode::PAYMENT_REQUIRED,
+                    Json(json!({
+                        "x402Version": 2,
+                        "accepts": [requirements],
+                        "error": "payment required"
+                    })),
+                )
+                    .into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+                    .into_response(),
+            }
+        }
+
+        // Phase B: agent sent payment — verify and settle.
+        Some(payment_header) => {
+            match handler.verify_and_settle(&checkout, &payment_header).await {
+                Ok(()) => {
+                    // Payment settled — mark checkout as completed.
+                    let complete_result = checkout.complete();
+                    if state.checkout_store.save(&checkout).await.is_err() {
+                        return internal_error().into_response();
+                    }
+                    match complete_result {
+                        Ok(_) => (StatusCode::OK, Json(checkout)).into_response(),
+                        Err(_) => (StatusCode::CONFLICT, Json(checkout)).into_response(),
+                    }
+                }
+                Err(e) => {
+                    // Payment failed — return 402 with the reason.
+                    (
+                        StatusCode::PAYMENT_REQUIRED,
+                        Json(json!({
+                            "x402Version": 2,
+                            "error": e.to_string()
+                        })),
+                    )
+                        .into_response()
+                }
+            }
+        }
     }
 }
 

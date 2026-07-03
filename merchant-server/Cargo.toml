@@ -32,5 +32,10 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "mac
 async-trait = "0.1"
 thiserror = "2"
 
+# Phase 3: x402 payment handler
+reqwest = { version = "0.12", features = ["json"] }
+
+base64 = "0.22"
+
 [dev-dependencies]
 axum-test = "17"

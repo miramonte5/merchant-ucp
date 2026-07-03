@@ -1,4 +1,5 @@
 mod models;
+mod payments;
 mod routes;
 mod store;
 
@@ -7,20 +8,23 @@ use axum::{
     Router,
 };
 use sqlx::postgres::PgPoolOptions;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+use payments::{MppHandler, PaymentHandler, X402SolanaHandler};
 use store::{CheckoutStore, PgCheckoutStore};
 
 /// Shared application state, cloned into every request handler.
-/// `base_url` is needed to build absolute URLs in the UCP profile response.
-/// `checkout_store` persists checkout sessions in PostgreSQL (Phase 2).
 #[derive(Clone)]
 pub struct AppState {
     pub base_url: String,
     pub checkout_store: Arc<dyn CheckoutStore>,
+    /// Payment handlers keyed by their handler_id.
+    /// Routes resolve the correct handler from checkout.payment_handler_id.
+    pub payment_handlers: HashMap<String, Arc<dyn PaymentHandler>>,
 }
 
 #[tokio::main]
@@ -29,11 +33,19 @@ async fn main() {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let base_url = std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let base_url = std::env::var("BASE_URL")
+        .unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set (e.g. postgres://user:pass@localhost/merchant_db)");
+        .expect("DATABASE_URL must be set");
 
+    let facilitator_url = std::env::var("FACILITATOR_URL")
+        .unwrap_or_else(|_| "http://localhost:3001".to_string());
+
+    let merchant_wallet = std::env::var("MERCHANT_WALLET")
+        .expect("MERCHANT_WALLET must be set (Solana public key receiving USDC payments)");
+
+    // PostgreSQL connection pool.
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
@@ -45,9 +57,19 @@ async fn main() {
         .await
         .expect("failed to run database migrations");
 
+    // Register payment handlers.
+    let mut payment_handlers: HashMap<String, Arc<dyn PaymentHandler>> = HashMap::new();
+
+    let x402 = X402SolanaHandler::new(facilitator_url, merchant_wallet);
+    payment_handlers.insert(x402.handler_id().to_string(), Arc::new(x402));
+
+    let mpp = MppHandler::new(base_url.clone());
+    payment_handlers.insert(mpp.handler_id().to_string(), Arc::new(mpp));
+
     let state = AppState {
         base_url: base_url.clone(),
         checkout_store: Arc::new(PgCheckoutStore::new(pool)),
+        payment_handlers,
     };
 
     let app = Router::new()
