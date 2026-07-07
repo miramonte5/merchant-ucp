@@ -20,6 +20,23 @@ UCP endpoint paths are NOT predictable from REST naming conventions alone.
 Do not try variations like `/checkout`, `/checkout/create`, `/sessions`, etc.
 The exact paths are fixed and listed below — use them exactly as written.
 
+## Important: never guess or substitute the network or asset
+
+The `network` and `asset` fields in the 402 response are not suggestions —
+they are the exact chain and token the merchant will accept. Do not
+construct or sign a payment transaction using any other chain, token
+mint, or wallet ecosystem, even if it seems equivalent or more convenient.
+
+Before building any transaction:
+- `network` must match exactly what the 402 returned (e.g. `solana:devnet`).
+- `asset` must match exactly the mint address returned (e.g.
+  `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` for USDC devnet).
+
+If either field is missing, malformed, or you are unsure how to satisfy
+it, stop and report back instead of guessing. Sending funds on the wrong
+chain or with the wrong token cannot be reversed and will result in lost
+funds.
+
 ## Step-by-step procedure
 
 ### 1. Discover the merchant
@@ -110,3 +127,24 @@ POST {checkout_base}/checkout-sessions/{checkout_id}/complete
 
 Always report back the final checkout JSON (id, status, total, currency) so
 the result can be verified.
+
+### 4.5. Paying with a real payment handler: x402
+
+If the merchant responds to `complete` with HTTP 402 instead of 200, this
+is not an error — it means the attached payment handler requires an
+on-chain payment before the checkout can complete. Do not retry `complete`
+directly, and do not attempt to construct or sign the payment transaction
+yourself from the raw 402 body.
+
+Instead, run the buyer script already set up for this purpose:
+
+cd /opt/buyer-testing && MERCHANT_BASE_URL={base_url} npm start
+
+This script performs the full flow itself: it creates the checkout,
+attaches the handler, and completes payment using the official Solana
+x402 client library — reading the fee payer, network, and asset directly
+from the merchant's response, per the rule above about never guessing
+these values.
+
+Report back the script's final JSON output (status, transaction signature
+if present) as the result of this checkout.

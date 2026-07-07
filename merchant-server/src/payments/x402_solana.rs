@@ -45,6 +45,8 @@ struct PaymentRequirements {
 struct Extra {
     name: &'static str,
     version: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fee_payer: Option<String>,
 }
 
 /// Payload the agent sends in the X-Payment header (base64-encoded JSON).
@@ -110,6 +112,35 @@ impl X402SolanaHandler {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct SupportedResponse {
+    kinds: Vec<SupportedKind>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SupportedKind {
+    #[serde(default)]
+    extra: Option<serde_json::Value>,
+}
+
+impl X402SolanaHandler {
+    /// Consulta GET /supported en el facilitador para descubrir el fee
+    /// payer actual de Kora. No falla el checkout si el facilitador está
+    /// caído — el comprador puede seguir descubriéndolo por su cuenta.
+    async fn fetch_fee_payer(&self) -> Option<String> {
+        let url = format!("{}/supported", self.facilitator_url);
+        let resp = self.client.get(&url).send().await.ok()?;
+        let body: SupportedResponse = resp.json().await.ok()?;
+        body.kinds
+            .first()?
+            .extra
+            .as_ref()?
+            .get("feePayer")?
+            .as_str()
+            .map(|s| s.to_string())
+    }
+}
+
 #[async_trait]
 impl PaymentHandler for X402SolanaHandler {
     fn handler_id(&self) -> &str {
@@ -124,6 +155,7 @@ impl PaymentHandler for X402SolanaHandler {
         // we need to convert: 1 USD = 1_000_000 USDC micro-units
         // For simplicity in this PoC we treat total as USDC micro-units directly
         let amount = checkout.total.to_string();
+        let fee_payer = self.fetch_fee_payer().await;
 
         let requirements = PaymentRequirements {
             scheme: "exact",
@@ -138,6 +170,7 @@ impl PaymentHandler for X402SolanaHandler {
             extra: Extra {
                 name: "USDC",
                 version: "1",
+                fee_payer,
             },
         };
 
