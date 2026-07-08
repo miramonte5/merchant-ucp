@@ -66,6 +66,13 @@ impl UcpDiscoveryDocument {
                 version: "2026-04-08".to_string(),
             }],
         );
+        payment_handlers.insert(
+            "dev.cuadrolabs.x402".to_string(),
+            vec![PaymentHandlerDescriptor {
+                id: "x402_solana_devnet".to_string(),
+                version: "2026-04-08".to_string(),
+            }],
+        );
 
         UcpDiscoveryDocument {
             ucp: UcpProfile {
