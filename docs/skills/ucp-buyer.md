@@ -128,7 +128,7 @@ POST {checkout_base}/checkout-sessions/{checkout_id}/complete
 Always report back the final checkout JSON (id, status, total, currency) so
 the result can be verified.
 
-### 4.5. Paying with a real payment handler: x402
+### 4.5. Paying with a real payment handler
 
 If the merchant responds to `complete` with HTTP 402 instead of 200, this
 is not an error — it means the attached payment handler requires an
@@ -136,15 +136,9 @@ on-chain payment before the checkout can complete. Do not retry `complete`
 directly, and do not attempt to construct or sign the payment transaction
 yourself from the raw 402 body.
 
-Instead, run the buyer script already set up for this purpose:
+Instead, look for an `instructionsUrl` field inside `accepts[0].extra` in
+the 402 body. Fetch that URL — it contains handler-specific instructions
+for how to complete this exact payment. Follow those instructions exactly.
 
-cd /opt/buyer-testing && MERCHANT_BASE_URL={base_url} npm start
-
-This script performs the full flow itself: it creates the checkout,
-attaches the handler, and completes payment using the official Solana
-x402 client library — reading the fee payer, network, and asset directly
-from the merchant's response, per the rule above about never guessing
-these values.
-
-Report back the script's final JSON output (status, transaction signature
-if present) as the result of this checkout.
+If `instructionsUrl` is missing, stop and report back instead of guessing
+how to proceed.

@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
+use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
 
 use payments::{MppHandler, PaymentHandler, X402SolanaHandler};
@@ -29,6 +30,7 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() {
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
@@ -60,7 +62,7 @@ async fn main() {
     // Register payment handlers.
     let mut payment_handlers: HashMap<String, Arc<dyn PaymentHandler>> = HashMap::new();
 
-    let x402 = X402SolanaHandler::new(facilitator_url, merchant_wallet);
+    let x402 = X402SolanaHandler::new(facilitator_url, merchant_wallet, base_url.clone());
     payment_handlers.insert(x402.handler_id().to_string(), Arc::new(x402));
 
     let mpp = MppHandler::new(base_url.clone());
@@ -74,6 +76,10 @@ async fn main() {
 
     let app = Router::new()
         .route("/.well-known/ucp", get(routes::well_known::well_known_ucp))
+        .nest_service(
+            "/docs/skills", 
+            ServeDir::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../docs/skills")),
+        )
         .route(
             "/ucp/v1/checkout-sessions",
             post(routes::checkout::create_checkout),

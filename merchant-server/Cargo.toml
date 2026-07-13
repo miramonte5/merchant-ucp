@@ -26,7 +26,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # HTTP middleware (CORS, logging)
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "macros", "uuid", "chrono"] }
 async-trait = "0.1"

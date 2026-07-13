@@ -47,6 +47,7 @@ struct Extra {
     version: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     fee_payer: Option<String>,
+    instructions_url: String,
 }
 
 /// Payload the agent sends in the X-Payment header (base64-encoded JSON).
@@ -94,12 +95,16 @@ pub struct X402SolanaHandler {
     usdc_mint: String,
     /// CAIP-2 network identifier.
     network: String,
+    /// Base URL of this merchant server (for building self-referential
+    /// links, e.g. instructionsUrl in the 402 response).
+    base_url: String,
 }
 
 impl X402SolanaHandler {
     pub fn new(
         facilitator_url: String,
         merchant_wallet: String,
+        base_url: String,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -108,6 +113,7 @@ impl X402SolanaHandler {
             // USDC devnet mint — confirmed in your token accounts
             usdc_mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
             network: "solana:devnet".to_string(),
+            base_url,
         }
     }
 }
@@ -171,6 +177,7 @@ impl PaymentHandler for X402SolanaHandler {
                 name: "USDC",
                 version: "1",
                 fee_payer,
+                instructions_url: format!("{}/docs/skills/ucp-buyer.md", self.base_url),
             },
         };
 
