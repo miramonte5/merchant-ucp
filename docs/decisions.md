@@ -284,3 +284,30 @@ the primary store; Oracle ADB is additive, not a replacement.
 (Security), not deferred indefinitely — avoids the project drifting into
 permanently-open-ended "someday" work while still giving the Oracle
 Always-Free resources a real use within this project.
+
+---
+
+## [2026-07] Secrets in plain `.env` — acceptable now, non-negotiable before mainnet
+
+**Decision**: Keep `KORA_PRIVATE_KEY` (and other secrets) in plain `.env`
+files for now, with `chmod 600` as an interim mitigation. Migrate to
+`systemd-creds`/`LoadCredential=` (available in systemd 247+, present on
+Ubuntu 24.04) before any key controls mainnet funds.
+
+**Reasoning**: A plain env var in `.env` is readable by anyone with file
+access or `/proc/<pid>/environ` access to the process — a real exposure
+surface, prompted by reviewing common Kubernetes production pitfalls (not
+directly applicable here, since this stack doesn't use Kubernetes, but the
+underlying secrets-handling problem is the same). The currently deployed
+key only controls devnet SOL, with no real value, so building a full
+secrets pipeline now would be disproportionate to the actual risk.
+`systemd-creds` is the direct equivalent for a systemd-managed service:
+it encrypts the secret at rest and injects it at service start without
+exposing it as a readable env var.
+
+**Trade-off**: Deferring this means the interim state stays weaker than
+production-grade secrets handling. Mitigated by `chmod 600` on all known
+`.env` files (local project and Kora demo) to restrict read access to the
+file owner. This is not sufficient once a key custodies real funds — the
+migration to `systemd-creds` is a required precondition before operating
+with mainnet keys, not an optional hardening step.
