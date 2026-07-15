@@ -98,6 +98,11 @@ pub struct X402SolanaHandler {
     /// Base URL of this merchant server (for building self-referential
     /// links, e.g. instructionsUrl in the 402 response).
     base_url: String,
+    /// Solana RPC endpoint used to independently verify settled
+    /// payments on-chain — deliberately NOT the facilitator or Kora,
+    /// so a compromised or malicious intermediary can't lie about
+    /// whether the merchant actually got paid.
+    solana_rpc_url: String,
 }
 
 impl X402SolanaHandler {
@@ -114,6 +119,8 @@ impl X402SolanaHandler {
             usdc_mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
             network: "solana:devnet".to_string(),
             base_url,
+            solana_rpc_url: std::env::var("SOLANA_RPC_URL")
+                .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string()),
         }
     }
 }
