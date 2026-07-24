@@ -39,6 +39,8 @@ base64 = "0.22"
 
 solana-rpc-client = "3"
 solana-transaction-status-client-types = "3"
+solana-signature = "3"
+solana-rpc-client-api = "3"
 
 [dev-dependencies]
 axum-test = "17"

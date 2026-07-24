@@ -3,3 +3,5 @@ docs/private-notes.md
 .env
 *.env
 
+node_modules/
+package-lock.json
